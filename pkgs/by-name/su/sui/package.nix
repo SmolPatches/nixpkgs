@@ -2,7 +2,9 @@
 {
   lib,
   system ? stdenv.hostPlatform.system,
+  platform ? stdenv.hostPlatform,
   stdenv,
+  target ? if lib.strings.hasInfix "x86_64" system then "x86_64" else "aarch64",
   fetchzip,
   autoPatchelfHook,
   gccForLibs,
@@ -10,14 +12,6 @@
 }:
 
 let
-  arch =
-    if "${system}" == "aarch64-linux" then
-      "aarch64"
-    else if "${system}" == "x86_64-linux" then
-      "x86_64"
-    else
-      throw "using unsupported system"; # architecture check for builder
-
   mk_release =
     # builder function
     {
@@ -26,19 +20,21 @@ let
       arch,
       vhash,
     }:
-
+    let
+      triple = if platform.isLinux then "ubuntu-${arch}" else "macos-${arch}";
+    in
     stdenv.mkDerivation (finalAttrs: {
       pname = "sui-mainnet";
       version = version_number;
       src = fetchzip {
-        url = "https://github.com/MystenLabs/sui/releases/download/${type}-v${finalAttrs.version}/sui-${type}-v${finalAttrs.version}-ubuntu-${arch}.tgz";
+        url = "https://github.com/MystenLabs/sui/releases/download/${type}-v${finalAttrs.version}/sui-${type}-v${finalAttrs.version}-${triple}.tgz";
         hash = vhash;
         stripRoot = false;
       };
-      nativeBuildInputs = [
+      nativeBuildInputs = lib.optionals platform.isLinux [
         autoPatchelfHook
       ];
-      buildInputs = [ gccForLibs.lib ];
+      buildInputs = lib.optionals platform.isLinux [ gccForLibs.lib ];
       installPhase = ''
         runHook preInstall
         install -m 755 -d $out/bin
@@ -65,16 +61,16 @@ let
         changelog = "https://github.com/MystenLabs/sui/releases/tag/${type}-v${version_number}";
         downloadPage = "https://github.com/MystenLabs/sui";
         license = lib.licenses.asl20;
-        platforms = lib.platforms.linux;
+        platforms = lib.platforms.linux ++ lib.platforms.darwin;
         mainProgram = "sui";
         maintainers = with lib.maintainers; [ smolpatches ];
       };
     });
 in
-
 mk_release {
+  # BUILD MAC RELEASE
   type = "mainnet";
-  arch = arch;
+  arch = target;
   version_number = "1.46.3";
   vhash = "sha256-kwoibkFDrBLs3OB1dgofgdJTqyOiyozXWncN5MJ1Uco=";
 }
